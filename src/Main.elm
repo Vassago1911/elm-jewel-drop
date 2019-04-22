@@ -1,6 +1,6 @@
 module Main exposing (main)
 
-import Html
+import Html exposing (Html)
 import Html.Attributes
 import Svg
 import Svg.Attributes
@@ -10,6 +10,7 @@ main =
     
 type alias Model = 
     { lines : List Line
+    , marble : Point
     }
 
 type Line
@@ -20,14 +21,17 @@ type alias Point =
     , y : Float
     }
 
+init : Model
 init =
     { lines = 
         [ Line { x = 0, y = 0 } { x = 0, y = 1920 }
         , Line { x = 0, y = 1920 } { x = 1280, y = 1920 }
         , Line { x = 1280, y = 1920 } { x = 1280, y = 0 }
         ]
+    , marble = { x = 640, y = 0 }
     }
 
+view : Model -> Html msg
 view model =
     Svg.svg 
         [ Html.Attributes.attribute "viewBox" "0 0 1280 1920"
@@ -35,9 +39,15 @@ view model =
         , Html.Attributes.style "height" "540px"
 
         ] 
-        (List.map renderline model.lines
-
-        )  
+        [ Svg.g [] 
+            (List.map renderline model.lines)
+        , Svg.circle 
+            [ Svg.Attributes.cx (String.fromFloat model.marble.x)
+            , Svg.Attributes.cy (String.fromFloat model.marble.y)
+            , Svg.Attributes.r "20"
+            ] [] 
+        ]
+          
         
 
 renderline (Line start end) =
