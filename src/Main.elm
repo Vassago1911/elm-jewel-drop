@@ -6,10 +6,14 @@ import Svg
 import Svg.Attributes
 import Browser
 import Browser.Events 
+import Json.Decode as Decode exposing (Decoder)
 
 import Point2d exposing (Point2d)
-import Vector2d 
+import Vector2d exposing (Vector2d)
 import LineSegment2d exposing (LineSegment2d)
+
+marbleRadius = 
+    80
 
 main : Program () Model Msg 
 main =
@@ -22,7 +26,13 @@ main =
     
 type alias Model = 
     { lines : List LineSegment2d
-    , marble : Point2d
+    , marble : Marble
+    }
+
+type alias Marble =
+    { centerPoint : Point2d  
+    , velocity : Vector2d
+    , radius : Float
     }
 
 init : flags -> ( Model, Cmd msg )
@@ -39,7 +49,10 @@ init _ =
                 (Point2d.fromCoordinates ( 1280, 0 ))
             ]
       , marble = 
-            Point2d.fromCoordinates ( 640, 0 )
+            { centerPoint = Point2d.fromCoordinates ( 640, 0 )
+            , velocity = Vector2d.fromComponents ( 0, 3 )
+            , radius = 80
+            }
       }
     , Cmd.none 
     )
@@ -47,6 +60,7 @@ init _ =
 
 type Msg 
     = Tick Float
+    | OnKeyDown String
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
@@ -55,39 +69,65 @@ update msg model =
             ( { model | marble = moveDown model.lines delta model.marble}
             , Cmd.none
             )
+        OnKeyDown code ->
+            case code of 
+                "KeyA" ->
+                    ( { model | marble = moveLeft model.marble}
+                    , Cmd.none    
+                    )
+                _ ->
+                    ( model, Cmd.none )    
 
-moveDown : List LineSegment2d -> Float -> Point2d -> Point2d
-moveDown lines delta point =
+moveLeft : Marble -> Marble 
+moveLeft marble = 
+    { marble | velocity = Vector2d.sum marble.velocity (Vector2d.fromComponents ( -5, 0 ) ) }                                           
+
+moveDown : List LineSegment2d -> Float -> Marble -> Marble
+moveDown lines delta marble =
     let 
+        --animation displacement (maximal possible step)
         displacement =
-            Vector2d.fromComponents ( 0, delta )
+            Vector2d.scaleBy delta marble.velocity
+
+        --displacement from center to radius
+        boundary radius centerPoint =
+            Point2d.translateBy (Vector2d.fromComponents ( 0, radius ) ) centerPoint 
 
         newPoint =
-            Point2d.translateBy displacement point
+            Point2d.translateBy displacement marble.centerPoint
 
         intersect line =
-            LineSegment2d.intersectionPoint line (LineSegment2d.from point newPoint)
+            LineSegment2d.intersectionPoint line <| 
+                LineSegment2d.from 
+                    (boundary marble.radius marble.centerPoint) 
+                    (boundary marble.radius newPoint)
         
         intersections = 
             List.filterMap intersect lines
     in
     case List.head intersections of 
         Nothing -> 
-            newPoint
+            { marble | centerPoint = newPoint }
 
         Just intersectionPoint ->
             let
                 translation =
-                    Vector2d.from intersectionPoint point
+                    Vector2d.from intersectionPoint marble.centerPoint
                         |> Vector2d.normalize
-                        |> Vector2d.scaleBy 20                    
+                        |> Vector2d.scaleBy marbleRadius                   
             in            
-            Point2d.translateBy translation intersectionPoint
+            { marble | centerPoint = Point2d.translateBy translation intersectionPoint }
               
+keyDownDecoder : Decoder Msg 
+keyDownDecoder = 
+    Decode.map OnKeyDown ( Decode.field "code" Decode.string )
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Browser.Events.onAnimationFrameDelta Tick
+    Sub.batch 
+        [  Browser.Events.onAnimationFrameDelta Tick
+        ,  Browser.Events.onKeyDown keyDownDecoder
+        ]
 
 view : Model -> Html msg
 view model =
@@ -100,9 +140,9 @@ view model =
         [ Svg.g [] 
             (List.map renderline model.lines)
         , Svg.circle 
-            [ Svg.Attributes.cx (String.fromFloat (Point2d.xCoordinate model.marble))
-            , Svg.Attributes.cy (String.fromFloat (Point2d.yCoordinate model.marble))
-            , Svg.Attributes.r "20"
+            [ Svg.Attributes.cx (String.fromFloat (Point2d.xCoordinate model.marble.centerPoint))
+            , Svg.Attributes.cy (String.fromFloat (Point2d.yCoordinate model.marble.centerPoint))
+            , Svg.Attributes.r (String.fromFloat model.marble.radius)
             ] [] 
         ]
           
