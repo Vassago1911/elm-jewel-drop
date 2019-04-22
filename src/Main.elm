@@ -9,6 +9,7 @@ import Browser.Events
 
 import Point2d exposing (Point2d)
 import Vector2d 
+import LineSegment2d exposing (LineSegment2d)
 
 main : Program () Model Msg 
 main =
@@ -20,23 +21,20 @@ main =
         }
     
 type alias Model = 
-    { lines : List Line
+    { lines : List LineSegment2d
     , marble : Point2d
     }
-
-type Line
-    = Line Point2d Point2d
 
 init : flags -> ( Model, Cmd msg )
 init _ =
     ( { lines = 
-            [ Line 
+            [ LineSegment2d.from 
                 (Point2d.fromCoordinates ( 0, 0 )) 
                 (Point2d.fromCoordinates ( 0, 1920 )) 
-            , Line 
+            , LineSegment2d.from
                 (Point2d.fromCoordinates ( 0, 1920 )) 
                 (Point2d.fromCoordinates ( 1280, 1920 ))
-            , Line 
+            , LineSegment2d.from
                 (Point2d.fromCoordinates ( 1280, 1920 )) 
                 (Point2d.fromCoordinates ( 1280, 0 ))
             ]
@@ -58,15 +56,34 @@ update msg model =
             , Cmd.none
             )
 
-
-
-moveDown : List Line -> Float -> Point2d -> Point2d
+moveDown : List LineSegment2d -> Float -> Point2d -> Point2d
 moveDown lines delta point =
     let 
         displacement =
             Vector2d.fromComponents ( 0, delta )
+
+        newPoint =
+            Point2d.translateBy displacement point
+
+        intersect line =
+            LineSegment2d.intersectionPoint line (LineSegment2d.from point newPoint)
+        
+        intersections = 
+            List.filterMap intersect lines
     in
-    Point2d.translateBy displacement point
+    case List.head intersections of 
+        Nothing -> 
+            newPoint
+
+        Just intersectionPoint ->
+            let
+                translation =
+                    Vector2d.from intersectionPoint point
+                        |> Vector2d.normalize
+                        |> Vector2d.scaleBy 20                    
+            in            
+            Point2d.translateBy translation intersectionPoint
+              
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -91,12 +108,12 @@ view model =
           
         
 
-renderline (Line start end) =
+renderline lineSegment =
     Svg.line
-        [ Svg.Attributes.x1 (String.fromFloat (Point2d.xCoordinate start))
-        , Svg.Attributes.y1 (String.fromFloat (Point2d.yCoordinate start))
-        , Svg.Attributes.x2 (String.fromFloat (Point2d.xCoordinate end))
-        , Svg.Attributes.y2 (String.fromFloat (Point2d.yCoordinate end))
+        [ Svg.Attributes.x1 (String.fromFloat (Point2d.xCoordinate (LineSegment2d.startPoint lineSegment)))
+        , Svg.Attributes.y1 (String.fromFloat (Point2d.yCoordinate (LineSegment2d.startPoint lineSegment)))
+        , Svg.Attributes.x2 (String.fromFloat (Point2d.xCoordinate (LineSegment2d.endPoint lineSegment)))
+        , Svg.Attributes.y2 (String.fromFloat (Point2d.yCoordinate (LineSegment2d.endPoint lineSegment)))
         , Svg.Attributes.strokeWidth "2"
         , Svg.Attributes.stroke "black"
         ]
