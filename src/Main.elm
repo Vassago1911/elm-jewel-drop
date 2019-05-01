@@ -36,7 +36,14 @@ type alias Marble =
     { centerPoint : Point2d
     , velocity : Vector2d
     , radius : Float
+    , movement : UserMovement
     }
+
+
+type UserMovement
+    = Left
+    | Right
+    | Stay
 
 
 init : flags -> ( Model, Cmd msg )
@@ -56,6 +63,7 @@ init _ =
             { centerPoint = Point2d.fromCoordinates ( 640, 0 )
             , velocity = Vector2d.fromComponents ( 0, 3 )
             , radius = 80
+            , movement = Stay
             }
       }
     , Cmd.none
@@ -65,30 +73,68 @@ init _ =
 type Msg
     = Tick Float
     | OnKeyDown String
+    | OnKeyUp String
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         Tick delta ->
-            ( { model | marble = moveDown model.lines delta model.marble }
+            ( { model
+                | marble =
+                    model.marble
+                        |> moveDown model.lines delta
+                        |> moveUser model.lines delta
+              }
             , Cmd.none
             )
 
         OnKeyDown code ->
             case code of
                 "KeyA" ->
-                    ( { model | marble = moveLeft model.marble }
+                    ( { model | marble = updateMovement Left model.marble }
+                    , Cmd.none
+                    )
+
+                "KeyD" ->
+                    ( { model | marble = updateMovement Right model.marble }
                     , Cmd.none
                     )
 
                 _ ->
                     ( model, Cmd.none )
 
+        OnKeyUp code ->
+            ( { model | marble = updateMovement Stay model.marble }
+            , Cmd.none
+            )
+
+
+updateMovement : UserMovement -> Marble -> Marble
+updateMovement usermovement marble =
+    { marble | movement = usermovement }
+
 
 moveLeft : Marble -> Marble
 moveLeft marble =
     { marble | velocity = Vector2d.sum marble.velocity (Vector2d.fromComponents ( -5, 0 )) }
+
+
+moveUser : List LineSegment2d -> Float -> Marble -> Marble
+moveUser lines delta marble =
+    let
+        translation =
+            case marble.movement of
+                Left ->
+                    Vector2d.fromComponents ( -delta, 0 )
+
+                Right ->
+                    Vector2d.fromComponents ( delta, 0 )
+
+                Stay ->
+                    Vector2d.zero
+    in
+    { marble | centerPoint = Point2d.translateBy translation marble.centerPoint }
 
 
 moveDown : List LineSegment2d -> Float -> Marble -> Marble
@@ -128,16 +174,17 @@ moveDown lines delta marble =
             { marble | centerPoint = Point2d.translateBy translation intersectionPoint }
 
 
-keyDownDecoder : Decoder Msg
-keyDownDecoder =
-    Decode.map OnKeyDown (Decode.field "code" Decode.string)
+keyCodeDecoder : (String -> msg) -> Decoder msg
+keyCodeDecoder toMsg =
+    Decode.map toMsg (Decode.field "code" Decode.string)
 
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
         [ Browser.Events.onAnimationFrameDelta Tick
-        , Browser.Events.onKeyDown keyDownDecoder
+        , Browser.Events.onKeyDown (keyCodeDecoder OnKeyDown)
+        , Browser.Events.onKeyUp (keyCodeDecoder OnKeyUp)
         ]
 
 
