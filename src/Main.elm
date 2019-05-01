@@ -1,7 +1,8 @@
 module Main exposing (main)
 
+import Axis2d
 import Browser
-import Browser.Events
+import Browser.Events exposing (Visibility(..))
 import Html exposing (Html)
 import Html.Attributes
 import Json.Decode as Decode exposing (Decoder)
@@ -10,10 +11,6 @@ import Point2d exposing (Point2d)
 import Svg
 import Svg.Attributes
 import Vector2d exposing (Vector2d)
-
-
-marbleRadius =
-    80
 
 
 main : Program () Model Msg
@@ -29,6 +26,7 @@ main =
 type alias Model =
     { lines : List LineSegment2d
     , marble : Marble
+    , paused : Bool
     }
 
 
@@ -61,10 +59,11 @@ init _ =
             ]
       , marble =
             { centerPoint = Point2d.fromCoordinates ( 640, 0 )
-            , velocity = Vector2d.fromComponents ( 0, 3 )
+            , velocity = Vector2d.fromComponents ( 0, 1 )
             , radius = 80
             , movement = Stay
             }
+      , paused = False
       }
     , Cmd.none
     )
@@ -74,6 +73,7 @@ type Msg
     = Tick Float
     | OnKeyDown String
     | OnKeyUp String
+    | VisibilityChanged Visibility
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -83,8 +83,9 @@ update msg model =
             ( { model
                 | marble =
                     model.marble
-                        |> moveDown model.lines delta
-                        |> moveUser model.lines delta
+                        |> moveDown delta
+                        |> moveUser delta
+                        |> handleCollisions model.lines
               }
             , Cmd.none
             )
@@ -109,6 +110,66 @@ update msg model =
             , Cmd.none
             )
 
+        VisibilityChanged visibility ->
+            case visibility of
+                Visible ->
+                    ( { model | paused = False }, Cmd.none )
+
+                Hidden ->
+                    ( { model
+                        | paused = True
+                        , marble = updateMovement Stay model.marble
+                      }
+                    , Cmd.none
+                    )
+
+
+distancePointLine : Point2d -> LineSegment2d -> Maybe Vector2d
+distancePointLine point line =
+    case LineSegment2d.direction line of
+        Nothing ->
+            Nothing
+
+        Just direction ->
+            let
+                axis =
+                    Axis2d.through (LineSegment2d.startPoint line) direction
+
+                projectedPoint =
+                    point
+                        |> Point2d.projectOnto axis
+            in
+            Just (Vector2d.from projectedPoint point)
+
+
+handleCollision : LineSegment2d -> Marble -> Marble
+handleCollision line candidate =
+    case distancePointLine candidate.centerPoint line of
+        Nothing ->
+            candidate
+
+        Just distanceVector ->
+            let
+                distance =
+                    Vector2d.length distanceVector
+            in
+            if distance <= candidate.radius then
+                let
+                    translationVector =
+                        distanceVector
+                            |> Vector2d.normalize
+                            |> Vector2d.scaleBy (candidate.radius - distance)
+                in
+                { candidate | centerPoint = Point2d.translateBy translationVector candidate.centerPoint }
+
+            else
+                candidate
+
+
+handleCollisions : List LineSegment2d -> Marble -> Marble
+handleCollisions lines marble =
+    List.foldl handleCollision marble lines
+
 
 updateMovement : UserMovement -> Marble -> Marble
 updateMovement usermovement marble =
@@ -120,8 +181,8 @@ moveLeft marble =
     { marble | velocity = Vector2d.sum marble.velocity (Vector2d.fromComponents ( -5, 0 )) }
 
 
-moveUser : List LineSegment2d -> Float -> Marble -> Marble
-moveUser lines delta marble =
+moveUser : Float -> Marble -> Marble
+moveUser delta marble =
     let
         translation =
             case marble.movement of
@@ -137,41 +198,17 @@ moveUser lines delta marble =
     { marble | centerPoint = Point2d.translateBy translation marble.centerPoint }
 
 
-moveDown : List LineSegment2d -> Float -> Marble -> Marble
-moveDown lines delta marble =
+moveDown : Float -> Marble -> Marble
+moveDown delta marble =
     let
         --animation displacement (maximal possible step)
         displacement =
             Vector2d.scaleBy delta marble.velocity
 
-        --displacement from center to radius
-        boundary radius centerPoint =
-            Point2d.translateBy (Vector2d.fromComponents ( 0, radius )) centerPoint
-
         newPoint =
             Point2d.translateBy displacement marble.centerPoint
-
-        intersect line =
-            LineSegment2d.intersectionPoint line <|
-                LineSegment2d.from
-                    (boundary marble.radius marble.centerPoint)
-                    (boundary marble.radius newPoint)
-
-        intersections =
-            List.filterMap intersect lines
     in
-    case List.head intersections of
-        Nothing ->
-            { marble | centerPoint = newPoint }
-
-        Just intersectionPoint ->
-            let
-                translation =
-                    Vector2d.from intersectionPoint marble.centerPoint
-                        |> Vector2d.normalize
-                        |> Vector2d.scaleBy marbleRadius
-            in
-            { marble | centerPoint = Point2d.translateBy translation intersectionPoint }
+    { marble | centerPoint = newPoint }
 
 
 keyCodeDecoder : (String -> msg) -> Decoder msg
@@ -182,9 +219,14 @@ keyCodeDecoder toMsg =
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ Browser.Events.onAnimationFrameDelta Tick
+        [ if model.paused then
+            Sub.none
+
+          else
+            Browser.Events.onAnimationFrameDelta Tick
         , Browser.Events.onKeyDown (keyCodeDecoder OnKeyDown)
         , Browser.Events.onKeyUp (keyCodeDecoder OnKeyUp)
+        , Browser.Events.onVisibilityChange VisibilityChanged
         ]
 
 
