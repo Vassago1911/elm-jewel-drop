@@ -27,6 +27,7 @@ type alias Model =
     { lines : List LineSegment2d
     , marble : Marble
     , paused : Bool
+    , movement : UserMovement
     }
 
 
@@ -34,7 +35,6 @@ type alias Marble =
     { centerPoint : Point2d
     , velocity : Vector2d
     , radius : Float
-    , movement : UserMovement
     }
 
 
@@ -61,9 +61,9 @@ init _ =
             { centerPoint = Point2d.fromCoordinates ( 640, 0 )
             , velocity = Vector2d.fromComponents ( 0, 1 )
             , radius = 80
-            , movement = Stay
             }
       , paused = False
+      , movement = Stay
       }
     , Cmd.none
     )
@@ -84,7 +84,7 @@ update msg model =
                 | marble =
                     model.marble
                         |> moveDown delta
-                        |> moveUser delta
+                        |> moveUser delta model.movement
                         |> handleCollisions model.lines
               }
             , Cmd.none
@@ -93,12 +93,12 @@ update msg model =
         OnKeyDown code ->
             case code of
                 "KeyA" ->
-                    ( { model | marble = updateMovement Left model.marble }
+                    ( { model | movement = Left }
                     , Cmd.none
                     )
 
                 "KeyD" ->
-                    ( { model | marble = updateMovement Right model.marble }
+                    ( { model | movement = Right }
                     , Cmd.none
                     )
 
@@ -106,7 +106,7 @@ update msg model =
                     ( model, Cmd.none )
 
         OnKeyUp code ->
-            ( { model | marble = updateMovement Stay model.marble }
+            ( { model | movement = Stay }
             , Cmd.none
             )
 
@@ -118,7 +118,7 @@ update msg model =
                 Hidden ->
                     ( { model
                         | paused = True
-                        , marble = updateMovement Stay model.marble
+                        , movement = Stay
                       }
                     , Cmd.none
                     )
@@ -171,21 +171,16 @@ handleCollisions lines marble =
     List.foldl handleCollision marble lines
 
 
-updateMovement : UserMovement -> Marble -> Marble
-updateMovement usermovement marble =
-    { marble | movement = usermovement }
-
-
 moveLeft : Marble -> Marble
 moveLeft marble =
     { marble | velocity = Vector2d.sum marble.velocity (Vector2d.fromComponents ( -5, 0 )) }
 
 
-moveUser : Float -> Marble -> Marble
-moveUser delta marble =
+moveUser : Float -> UserMovement -> Marble -> Marble
+moveUser delta movement marble =
     let
         translation =
-            case marble.movement of
+            case movement of
                 Left ->
                     Vector2d.fromComponents ( -delta, 0 )
 
